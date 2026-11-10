@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" width="100%" height="100%">
+  <defs>
+    <linearGradient id="claude-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#E27D60"/>
+      <stop offset="50%" stop-color="#D96B47"/>
+      <stop offset="100%" stop-color="#C15C3D"/>
+    </linearGradient>
+    <filter id="subtle-shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#D96B47" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+  <!-- Background Badge -->
+  <rect width="240" height="240" rx="48" fill="#FBF7F4"/>
+  <rect width="238" height="238" x="1" y="1" rx="47" fill="none" stroke="#EFE6DF" stroke-width="2"/>
+  
+  <!-- Claude Official Stylized Sparkle Icon -->
+  <g transform="translate(120, 120)" filter="url(#subtle-shadow)" fill="url(#claude-gradient)">
+    <!-- 16-ray geometric burst -->
+    <path d="M0 -72 C2 -40 4 -20 18 -18 C20 -4 40 -2 72 0 C40 2 20 4 18 18 C4 20 2 40 0 72 C-2 40 -4 20 -18 18 C-20 4 -40 2 -72 0 C-40 -2 -20 -4 -18 -18 C-4 -20 -2 -40 0 -72 Z"/>
+    <path transform="rotate(45)" d="M0 -58 C2 -32 3 -16 14 -14 C16 -3 32 -2 58 0 C32 2 16 3 14 14 C3 16 2 32 0 58 C-2 32 -3 16 -14 14 C-16 3 -32 2 -58 0 C-32 -2 -16 -3 -14 -14 C-3 -16 -2 -32 0 -58 Z" opacity="0.88"/>
+    <circle cx="0" cy="0" r="13" fill="#FAF4F0"/>
+    <circle cx="0" cy="0" r="7" fill="#C15C3D"/>
+  </g>
+</svg>

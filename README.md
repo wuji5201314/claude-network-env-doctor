@@ -1,8 +1,22 @@
-# Claude Network Environment Doctor (Claude 网络环境分层体检)
+<p align="center">
+  <img src="assets/claude-logo.svg" alt="Claude Network Environment Doctor" width="108" height="108" />
+</p>
 
-[![GitHub License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](SKILL.md)
-[![Tool-Agnostic](https://img.shields.io/badge/proxy-Clash%20%7C%20sing--box%20%7C%20v2rayN%20%7C%20TUN-brightgreen.svg)](references/paths-and-commands.md)
+<h1 align="center">Claude Network Environment Doctor</h1>
+
+<p align="center">
+  <b>Claude 网络环境分层体检指南与 Windows 只读诊断脚本 (L0 → L4)</b>
+  <br />
+  <sub>系统解耦物理连通、代理链路、DNS/WebRTC 泄漏、端点状态与账号可用性</sub>
+</p>
+
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
+  <a href="SKILL.md"><img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg" alt="Platform"></a>
+  <a href="references/paths-and-commands.md"><img src="https://img.shields.io/badge/proxy-Clash%20%7C%20sing--box%20%7C%20v2rayN%20%7C%20TUN-brightgreen.svg" alt="Tool Agnostic"></a>
+</p>
+
+---
 
 面向不同操作系统与代理工具的 **Claude 连通性分层诊断指南** 与 **Windows 一键只读体检脚本**。
 
