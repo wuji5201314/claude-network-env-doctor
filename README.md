@@ -1,41 +1,87 @@
 # Claude Network Environment Doctor (Claude 网络环境分层体检)
 
-面向不同操作系统与代理工具的 Claude 连接诊断指南与只读体检脚本。
+[![GitHub License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](SKILL.md)
+[![Tool-Agnostic](https://img.shields.io/badge/proxy-Clash%20%7C%20sing--box%20%7C%20v2rayN%20%7C%20TUN-brightgreen.svg)](references/paths-and-commands.md)
 
-将常见的“Claude 用不了 / 转圈 / 403 / 登录循环”拆解为 5 个独立验证层（L0 → L4），**每层只聚焦一个根本问题**，通过才进入下一层，定位到哪一层就停在哪一层给出唯一修复路径，彻底避免盲目修改系统代理、关 IPv6、覆写 DNS 导致越调越乱。
+面向不同操作系统与代理工具的 **Claude 连通性分层诊断指南** 与 **Windows 一键只读体检脚本**。
+
+将复杂的网络连接与账号使用门槛拆解为 **L0 至 L4 五个互不混淆的独立逻辑层**。通过逐层递进、单层定责的排查流程，彻底告别“盲目改 DNS、关 IPv6、切节点、重装代理”的无头绪试错死循环。
 
 ---
 
-## 诊断分层模型 (L0 → L4)
+## 为什么需要这个项目？
 
-| 层级 | 检查核心 | 关注指标 / 判据 | 典型失败表现 |
-|---|---|---|---|
-| **L0 基础连通** | 本机物理网络是否正常 | 默认物理路由、当地可访问基线域名解析与 HTTPS | 多个普通网站均打不开、网卡未获取 IP |
-| **L1 代理链路** | 流量是否确实经由代理出口 | 代理核心运行、系统代理/TUN/环境变量、实际出口 IP 与 ASN | 出口仍等于直连基线 IP、代理核心未启动 |
-| **L2 解析与泄漏** | 解析与流量是否意外绕开代理 | fake-ip 接管、活动网卡 IPv6、浏览器安全 DNS (DoH)、WebRTC | 浏览器直连公网 IPv6 泄漏、DoH 绕过代理 |
-| **L3 端点可达** | Claude 目标服务连通性 | TCP 握手、TLS 证书、HTTP 状态码（204/200/401/403/5xx） | 连接超时 (000)、TLS 握手失败、403 阻断 |
-| **L4 可用性判定** | 服务可用条件与账号信号 | 地区限制提示、出口 IP 跳变、Cloudflare 人机验证、429 限流 | 明确提示地区不支持、频繁掉登录态、验证码死循环 |
+在使用 Claude（包括网页版、Claude Code CLI 或桌面客户端）时，用户经常遇到以下棘手状况：
+
+1. **看似“断网”，实则分流未生效**：浏览器能打开 Google，但 `claude.ai` 转圈或报错，反复切换代理节点依然无果。
+2. **“网页能用，但 CLI / 桌面端报错”**：浏览器正常对话，但在终端运行 `claude` 时报连接超时或网络错误——因为 CLI 工具默认不读 Windows 系统代理（WinINET），需要显式环境变量或 TUN 接管。
+3. **“状态码误判”**：一看到 `403` 就以为“节点被封”或“账号被 Ban”，实际上可能是 Cloudflare 人机验证挑战（Turnstile），或者是缺少必要的请求参数；反之，API 返回 `401` 或 `400` 恰恰证明**底层网络已经彻底打通**。
+4. **过度配置与破坏性修改**：因测试网站提示“DNS 泄漏”就全局修改系统注册表、强行注销网卡驱动，反而导致局域网或其它内部服务瘫痪。
+
+**本项目旨在建立一套客观、精确、工具无关的诊断体系，让每次排障都有明确的数据支撑与止损边界。**
+
+---
+
+## 核心设计哲学
+
+```mermaid
+flowchart TD
+    Start["发现 Claude 连接或使用异常"] --> Scope{"确认影响范围与症状"}
+    
+    Scope -->|"所有外网均打不开"| L0["L0 基础连通<br/>(默认路由 / 本地 DNS / 基线站点)"]
+    Scope -->|"单客户端异常 / 仅 Claude 故障"| L1["L1 代理链路<br/>(进程存活 / 端口接管 / 出口 IP 与 ASN)"]
+    Scope -->|"隐私警告 / 浏览器出口异常"| L2["L2 解析与泄漏<br/>(fake-ip / 网卡 IPv6 / 浏览器 DoH / WebRTC)"]
+    
+    L0 -->|"PASS"| L1
+    L1 -->|"PASS"| L3["L3 端点可达<br/>(TCP握手 / TLS证书 / 状态码语义)"]
+    
+    L3 -->|"401/400/200"| Success["网络与端点全通"]
+    L3 -->|"403 地区或风控 / 429 限流"| L4["L4 可用性判定<br/>(停止调网络，进入账号/服务侧排查)"]
+    L3 -->|"000 超时 / TLS 错误"| FixL1["停留在 L1/L3: 排查节点质量或本地端口"]
+```
+
+1. **单层定责（One Layer, One Truth）**：
+   每层只回答一个问题。上一层未通过之前，绝不跳到下一层归因。如果 L0（物理网络）没通，绝不把问题怪到节点上；如果 L3 已经拿到 HTTP 响应码，绝不回退去乱改网卡设置。
+2. **客户端路径解耦（Path Specificity）**：
+   明确区分 Windows 系统代理（WinINET）、L3 TUN 虚拟网卡、终端环境变量（`HTTP_PROXY` / `HTTPS_PROXY`）与各应用自身的网络栈，针对不同客户端推荐专属排查路径。
+3. **无损只读排查（Zero Mutation）**：
+   诊断脚本 [`doctor.ps1`](scripts/doctor.ps1) 严格遵循只读原则，仅抓取网络拓扑与响应码快照，绝不擅自覆写注册表、不强制禁用系统协议、不私自重装驱动。
+4. **工具中立（Tool-Agnostic）**：
+   不绑定任何特定客户端。无论是 Clash Verge Rev、Mihomo、sing-box、v2rayN、FlClash 还是各类企业级 TUN / VPN，排查逻辑与底层命令完全通用。
+
+---
+
+## 诊断分层模型详解 (L0 → L4)
+
+| 层级 | 检查核心 | 关注指标 / 判据 | 典型失败表现 | 对应修复手段 |
+|:---|:---|:---|:---|:---|
+| **L0 基础连通** | 机器基础物理网络是否可用 | 存在物理默认路由；当地合法基线域名能解析且建立 HTTPS 连接 | 多个普通网站均打不开；网卡未获取 IP；网关丢包 | 修复物理网卡/Wi-Fi、重置 DHCP，**勿碰代理** |
+| **L1 代理链路** | 目标客户端流量是否受代理接管 | 核心进程存活；系统代理/TUN/环境变量至少一项激活；出口 IP 与基线直连不同 | 出口仍等于直连基线 IP；代理未接管目标应用 | 启动代理核心；开启 TUN 或为终端配置代理环境变量 |
+| **L2 解析与泄漏** | 解析与流量是否意外绕开代理 | fake-ip (`198.18.x.x`) 接管正常；网卡无未受管公网 IPv6；DoH 关闭；WebRTC 隐藏 | 浏览器出口与 `curl` 冲突；公网 IPv6 直连暴露 | 关闭浏览器“使用安全 DNS”；按需禁用网卡 IPv6 或开启 TUN |
+| **L3 端点可达** | Claude 目标服务与 API 连通性 | `claude.ai` 返回 `200/30x`；`api.anthropic.com` 返回 `401/400`；`assets-proxy` 通畅 | TCP 握手超时 (000)；TLS 证书被劫持；API 拒绝连接 | 验证代理分流规则；更换网络节点；排除本地端口冲突 |
+| **L4 可用性判定** | 服务可用条件与账号安全信号 | 响应体无 `unsupported_country`；出口 IP 稳定不跳变；无 Cloudflare 验证码死循环 | 明确提示地区不支持；频繁被强制登出；429 限流 | **停止调试本地网络**；转向账号权限、登录环境或官方支持渠道 |
 
 ---
 
 ## 快速上手
 
-### 方式 A：Windows 一键只读快照（推荐）
+### 方式 A：Windows 一键只读体检快照（推荐）
 
-项目内置了 Windows 专用的只读快照诊断脚本 [`scripts/doctor.ps1`](scripts/doctor.ps1)。该脚本不修改任何系统网络设置、不触碰敏感注册表键值，仅读取当前网络快照并输出结构化层级报告：
+项目内置了自动化诊断脚本 [`scripts/doctor.ps1`](scripts/doctor.ps1)，可在 10 秒内输出端到端的 L0-L4 体检快照：
 
 ```powershell
-# 完整体检（含 Claude 端点探测）
+# 1. 完整分层体检（包含 Claude 核心端点与 API 连通性探测）
 powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\doctor.ps1"
 
-# 仅检查网络基础与代理（跳过 Claude 端点探测）
+# 2. 仅检查网络基础与代理链路（跳过 Claude 端点探测，保护隐私）
 powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\doctor.ps1" -NoClaude
 
-# 指定本地可访问的基线探测地址（默认 https://example.com/）
+# 3. 指定所在地区可访问的基线探测地址（默认 https://example.com/）
 powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\doctor.ps1" -BaselineUrl "https://example.com/"
 ```
 
-#### 典型输出示例
+#### 诊断输出范例
 ```text
 === Claude Network Environment Doctor ===
 time=2026-11-10 18:37:22
@@ -79,49 +125,57 @@ No FAIL signal in this snapshot; this does not prove every layer or client path 
 
 ### 方式 B：跨平台（macOS / Linux）与无脚本排查
 
-无法运行 PowerShell 脚本或在 macOS/Linux 环境下时，可直接参考主指南 [`SKILL.md`](SKILL.md) 与对照表：
-- **L0 基础网络**：检查默认路由 (`ip route`) 与基础站点解析；
-- **L1 代理链路**：确认代理核心进程存活，使用 `curl -s https://ip.sb` 核验出口 IP；
-- **L2 泄漏排查**：核对网卡 IPv6 状态与浏览器安全 DNS (DoH)；
-- **L3 端点验证**：使用 `curl` 针对目标接口发送轻量探测（状态码返回 `401`/`400` 即代表网络层已全通）。
+无法直接运行 PowerShell 或在 macOS/Linux 环境下时，可直接参考主指南 [`SKILL.md`](SKILL.md) 配合标准命令行工具逐项验证：
 
----
+```bash
+# 1. 检查物理默认网关与基础解析 (L0)
+ip route get 1.1.1.1
+curl -s -o /dev/null -w "%{http_code}\n" -m 8 https://example.com
 
-## 客户端差异排查速查
+# 2. 验证代理出口 IP (L1)
+curl -s -m 10 https://ip.sb
 
-不同客户端对代理的识别机制存在显著差异：
-
-| 客户端类型 | 依赖的代理接管机制 | 常见陷阱与注意事项 |
-|---|---|---|
-| **浏览器 (Web)** | 系统代理 (WinINET / 系统设置) 或 TUN | 浏览器 DoH 开关未彻底关闭；公网 IPv6 绕过代理直连；修改代理后后台进程未退出。 |
-| **Claude Code CLI** | 环境变量 (`HTTPS_PROXY` / `HTTP_PROXY`) 或 TUN | 默认不读 Windows 系统代理；`setx` 对当前已打开终端无效；OAuth 授权需经浏览器完成。 |
-| **桌面客户端 (Desktop)** | 系统代理或 TUN | 关闭窗口后托盘后台进程依然驻留；网络配置更新后需彻底结束进程重启。 |
-
-详细客户端配置细节见 [`references/client-profiles.md`](references/client-profiles.md)。
-
----
-
-## 仓库结构与参考资料
-
-```text
-.
-├── SKILL.md                         # 核心指南：L0-L4 诊断主流程、判定准则与报告模板
-├── README.md                        # 项目说明文档
-├── scripts/
-│   └── doctor.ps1                   # Windows 自动化只读快照体检脚本 (L0-L4)
-└── references/
-    ├── claude-readiness.md          # Claude 各端点语义、403/401 细分与可用性检查清单
-    ├── client-profiles.md           # 浏览器 / Claude Code CLI / 桌面端差异排查要点
-    ├── false-positives.md           # 常见测试误报清单与网络概念纠错
-    ├── ladder-details.md            # 每层故障分支详解与跨平台命令对照表
-    └── paths-and-commands.md        # Windows 四套代理机制全景取证与工具配置路径
+# 3. 验证 Claude API 端点连通性 (L3)
+# 注：若返回 401 或 400，即证明网络/TLS 层已经彻底打通
+curl -s -o /dev/null -w "%{http_code}\n" -m 15 -X POST https://api.anthropic.com/v1/messages -H "content-type: application/json" -d "{}"
 ```
 
 ---
 
-## 核心原则与合规边界
+## 客户端专项排查要点
 
-1. **只读诊断与非对抗性**：本项目仅专注于网络连通性、代理接管确认与隐私防漏诊断。
-2. **不提供规避与伪装手段**：不提供任何形式的伪造地区、指纹欺骗、自动化绕过服务条款或对抗风控的方案。
-3. **不做破坏性系统操作**：脚本不会在未说明的情况下擅自修改注册表、全局禁用网络协议或重装网卡驱动。
-4. **客观陈述**：对服务限制和风控告警仅陈述技术事实与官方公开策略。
+不同客户端对代理的识别机制存在显著差异，配置时切忌一概而论：
+
+| 客户端形态 | 代理接管依赖项 | 高频踩坑点与排查关键 |
+|:---|:---|:---|
+| **网页端 (Web)** | Windows 系统代理 (WinINET) 或 TUN 网卡 | 1. 浏览器内置“安全 DNS (DoH)”开关未彻底变灰，导致 DNS 解析绕过代理。<br/>2. 本地公网 IPv6 未被代理接管，形成直连旁路。<br/>3. 修改代理后，浏览器后台驻留进程（`msedge.exe` / `chrome.exe`）缓存了旧长连接。 |
+| **Claude Code CLI** | 环境变量 (`HTTPS_PROXY` / `HTTP_PROXY`) 或 TUN 网卡 | 1. **默认不读取** Windows 系统代理；只开启系统代理会导致 CLI 直连失败。<br/>2. PowerShell 中使用 `setx` 仅对新开启的窗口生效，当前窗口需 `$env:HTTPS_PROXY="..."`。<br/>3. CLI 运行需完成浏览器 OAuth 授权，网页通不代表 CLI 终端通。 |
+| **桌面客户端 (Desktop)** | 系统代理或 TUN 网卡（基于 Electron） | 1. 单击关闭窗口仅最小化至系统托盘，后台未退出，代理改动不生效。<br/>2. 内置网络设置若曾配置固定端口，在切换代理工具后会失效。 |
+
+针对各类客户端的具体验证步骤与命令见 [`references/client-profiles.md`](references/client-profiles.md)。
+
+---
+
+## 项目结构与文档索引
+
+```text
+.
+├── SKILL.md                         # 核心主指南：L0-L4 诊断流程、分流逻辑与判定准则
+├── README.md                        # 项目全景说明文档（本文件）
+├── scripts/
+│   └── doctor.ps1                   # Windows 专用 L0-L4 一键自动化只读快照脚本
+└── references/
+    ├── claude-readiness.md          # Claude 核心端点语义、HTTP 状态码深度解析与可用性检查单
+    ├── client-profiles.md           # Web 端 / Claude Code CLI / 桌面端差异化配置与陷阱速查
+    ├── false-positives.md           # 常见检测误报纠错（如 fake-ip、分流多地区解析、机房 IP 等）
+    ├── ladder-details.md            # 每层故障的跨平台命令对照表与针对性修复步骤
+    └── paths-and-commands.md        # Windows 四套代理机制全景取证与主流工具配置路径速查
+```
+
+---
+
+## 核心原则与安全边界
+
+1. **严格只读与可观测性**：本项目仅专注于连通性排查、代理接管确认与隐私泄漏检测，绝不替用户做静默的破坏性系统修改。
+2. **合规与非对抗性**：本项目**不提供**任何伪造地理位置、伪造指纹特征、规避服务条款或对抗风控系统的手段。
+3. **尊重官方政策**：遇到明确的服务地区限制或账号风控拦截时，客观呈现响应体事实，引导用户通过官方支持的渠道与合规网络进行访问。
