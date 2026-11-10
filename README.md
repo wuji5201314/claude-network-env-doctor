@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/claude-mascot.png" alt="Claude Doctor Mascot" width="180" style="border-radius: 24px;" />
+  <img src="assets/claude-mascot.png" alt="Claude Mascot Clawd" width="160" />
 </p>
 
 <h1 align="center">Claude Network Environment Doctor</h1>
