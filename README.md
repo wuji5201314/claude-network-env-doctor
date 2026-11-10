@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/claude-mascot.png" alt="Claude Mascot Duo" width="340" />
+  <img src="assets/claude-mascot.png" alt="Claude Mascot Duo" width="220" />
 </p>
 
 <h1 align="center">Claude Network Environment Doctor</h1>
