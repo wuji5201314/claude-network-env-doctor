@@ -1,4 +1,4 @@
-﻿# Progressive network environment doctor (L0-L4). Read-only.
+# Progressive network environment doctor (L0-L4). Read-only.
 # Usage: powershell -NoProfile -ExecutionPolicy Bypass -File doctor.ps1 [-NoClaude] [-BaselineUrl https://example.com/]
 param(
   [switch]$NoClaude,
@@ -212,7 +212,7 @@ if ($egress) {
 Head 'L2 dns and leaks'
 $claudeIps = @(Resolve-HostIps 'claude.ai')
 if ($claudeIps -match '^198\.18\.') {
-  Line 'L2' 'dns for claude.ai' 'PASS' ("$($claudeIps -join ', ') (fake-ip, hijacked by TUN/DNS)")
+  Line 'L2' 'dns for claude.ai' 'INFO' ("$($claudeIps -join ', ') (fake-ip for this OS lookup only; does not test browser DoH or other DNS queries)")
 } elseif ($claudeIps.Count -gt 0) {
   Line 'L2' 'dns for claude.ai' 'INFO' ("$($claudeIps -join ', ') (real IP; normal when not using fake-ip)")
 } else {
@@ -270,7 +270,7 @@ if (-not $NoClaude) {
   }
 
   $assets = HttpProbe -Url 'https://assets-proxy.anthropic.com' -Timeout 15 -ProxyUrl $probeProxyArg
-  if ($assets.Code -eq '000') { Line 'L3' 'assets-proxy' 'FAIL' $assets.FailReason }
+  if ($assets.Code -eq '000') { Line 'L3' 'assets-proxy' 'WARN' ("$($assets.FailReason) (root probe only; verify browser resource requests if the page has loading errors)") }
   else { Line 'L3' 'assets-proxy' 'PASS' "http $($assets.Code)" }
 }
 

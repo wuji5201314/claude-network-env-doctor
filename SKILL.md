@@ -121,15 +121,16 @@ ifconfig | grep inet6          # macOS/Linux
 ```
 
 - **fake-ip 不是问题**：`198.18.x.x` 说明代理接管了 DNS，是正常现象。
-- **DNS 泄漏测试显示不同网络/地区的解析器可能是分流结果**，不能仅凭解析器地理位置判泄漏。详见 `references/false-positives.md`。
-- **DoH 必须真关**：浏览器“使用安全 DNS”开关要变灰，只换提供商不算关。
+- 单次 `nslookup` 返回 fake-ip 只说明该系统查询的这个域名得到了 fake-ip，不代表浏览器 DoH、随机测试域名或所有 DNS 上游都没有绕行。
+- DNS 检测显示 ISP 解析器是需追查的信号；先确认服务商归属和该客户端实际查询路径。递归解析器的 IP/地区无需与网页代理出口相同；公共 DNS 可能由异地节点响应。若本应所有查询经代理却持续观察到本地 ISP 解析器，且确认该客户端查询走了本地路径，才判定该检测路径存在绕行。详见 `references/false-positives.md`。
+- DoH 不要求一律关闭：若浏览器 DoH 是预期的解析方式，确认 DoH 请求本身也经过代理/TUN；若希望统一使用系统/Mihomo DNS，再关闭浏览器独立 DoH。仅看到 DoH 开启或解析器与代理出口不同，都不能单独定为泄漏。
 - **IPv6 可能绕过代理**：公网 IPv6 只是风险信号；用浏览器实际出口或 `curl -6` 对照目标路径确认，不能仅凭网卡启用状态定为故障。
 
 浏览器侧人工确认（无法可靠自动检测）：
 
 | 检查 | 位置 | 通过标准 |
 |---|---|---|
-| DoH | 设置 → 隐私 → 使用安全 DNS | 开关灰色 |
+| DoH | 浏览器网络/隐私设置 | 与预期路径相符：统一使用系统/Mihomo DNS 时应关闭；使用浏览器 DoH 时确认请求经代理/TUN |
 | IPv6 | `browserleaks.com/ip` 或针对客户端的 IPv6 请求 | 无意外的直连公网 IPv6；是否关闭网卡 IPv6 按证据和需要决定 |
 | 实际出口 | `browserleaks.com/ip` | 公网 IP = L1 出口，IPv6 为 `n/a` |
 | WebRTC | `browserleaks.com/webrtc` | `No Leak`，本地 IP 隐藏 |

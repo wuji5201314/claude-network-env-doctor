@@ -45,7 +45,7 @@ flowchart TD
     
     Scope -->|"所有外网均打不开"| L0["L0 基础连通<br/>(默认路由 / 本地 DNS / 基线站点)"]
     Scope -->|"单客户端异常 / 仅 Claude 故障"| L1["L1 代理链路<br/>(进程存活 / 端口接管 / 出口 IP 与 ASN)"]
-    Scope -->|"隐私警告 / 浏览器出口异常"| L2["L2 解析与泄漏<br/>(fake-ip / 网卡 IPv6 / 浏览器 DoH / WebRTC)"]
+    Scope -->|"隐私警告 / 浏览器出口异常"| L2["L2 解析与泄漏<br/>(解析路径 / IPv6 / 浏览器 DoH / WebRTC)"]
     
     L0 -->|"PASS"| L1
     L1 -->|"PASS"| L3["L3 端点可达<br/>(TCP握手 / TLS证书 / 状态码语义)"]
@@ -72,9 +72,15 @@ flowchart TD
 |:---|:---|:---|:---|:---|
 | **L0 基础连通** | 机器基础物理网络是否可用 | 存在物理默认路由；当地合法基线域名能解析且建立 HTTPS 连接 | 多个普通网站均打不开；网卡未获取 IP；网关丢包 | 修复物理网卡/Wi-Fi、重置 DHCP，**勿碰代理** |
 | **L1 代理链路** | 目标客户端流量是否受代理接管 | 核心进程存活；系统代理/TUN/环境变量至少一项激活；出口 IP 与基线直连不同 | 出口仍等于直连基线 IP；代理未接管目标应用 | 启动代理核心；开启 TUN 或为终端配置代理环境变量 |
-| **L2 解析与泄漏** | 解析与流量是否意外绕开代理 | fake-ip (`198.18.x.x`) 接管正常；网卡无未受管公网 IPv6；DoH 关闭；WebRTC 隐藏 | 浏览器出口与 `curl` 冲突；公网 IPv6 直连暴露 | 关闭浏览器“使用安全 DNS”；按需禁用网卡 IPv6 或开启 TUN |
+| **L2 解析与泄漏** | 目标客户端的 DNS/流量是否绕开预期路径 | 同一客户端的 DNS 查询路径符合预期；网页出口与代理出口一致；无未受管公网 IPv6；WebRTC 无意外地址 | 反复观察到本地 ISP 解析器且预期 DNS 全走代理；公网 IPv6 直连暴露 | 核实解析器与客户端路径；按需调整 DoH/代理规则、IPv6 接管或 TUN |
 | **L3 端点可达** | Claude 目标服务与 API 连通性 | `claude.ai` 返回 `200/30x`；`api.anthropic.com` 返回 `401/400`；`assets-proxy` 通畅 | TCP 握手超时 (000)；TLS 证书被劫持；API 拒绝连接 | 验证代理分流规则；更换网络节点；排除本地端口冲突 |
 | **L4 可用性判定** | 服务可用条件与账号安全信号 | 响应体无 `unsupported_country`；出口 IP 稳定不跳变；无 Cloudflare 验证码死循环 | 明确提示地区不支持；频繁被强制登出；429 限流 | **停止调试本地网络**；转向账号权限、登录环境或官方支持渠道 |
+
+### DNS 结果如何判读
+
+DNS 检测显示的 IP 是**递归解析器**，网页出口 IP 是**代理连接的出口**，二者不是同一类地址，也不要求相同。公共 DNS 可能由异地节点响应，因此“Google（香港）+ 网页出口（美国）”本身不能证明 DNS 泄漏。判断时要核实检测运行的客户端、该客户端 DNS 实际走的路径，以及解析器是否为预期的 ISP；同一浏览器、同一代理状态下复测，并结合代理工具的 DNS/连接记录。检测页显示“未检测到泄漏”只代表本次测试结果。
+
+DoH（安全 DNS）不要求一律关闭。使用浏览器 DoH 时，要确认 DoH 请求本身经过代理/TUN；只有希望浏览器统一使用系统或代理工具的 DNS 时，才关闭浏览器独立 DoH。单次 `nslookup` 得到 fake-ip 只说明这个系统查询结果，不代表浏览器 DoH 或其他域名也走相同路径。
 
 ---
 
@@ -112,11 +118,11 @@ L1  curl egress ipv4               INFO   154.29.145.163 (ambient curl path; ver
 L1  egress geo                     INFO   US / AS979 NetLab Global
 
 === L2 dns and leaks ===
-L2  dns for claude.ai              PASS   198.18.0.47 (fake-ip, hijacked by TUN/DNS)
+L2  dns for claude.ai              INFO   198.18.0.47 (fake-ip for this OS query only; browser DoH/other queries not checked)
 L2  ipv6 egress                    PASS   none
 L2  ipv6 on active NIC             PASS   TCP/IPv6 disabled on active physical adapter
 L2  browser processes              INFO   msedge=15 (kill all background processes after proxy/IPv6 changes)
-L2  browser DoH                    MANUAL must be OFF (toggle grey), not just another provider
+L2  browser DoH                    MANUAL verify the selected mode matches the intended proxy/DNS path
 L2  WebRTC leak                    MANUAL browserleaks.com/webrtc should show No Leak
 
 === L3 reachability ===
@@ -162,7 +168,7 @@ curl -s -o /dev/null -w "%{http_code}\n" -m 15 -X POST https://api.anthropic.com
 
 | 客户端形态 | 代理接管依赖项 | 高频踩坑点与排查关键 |
 |:---|:---|:---|
-| **网页端 (Web)** | Windows 系统代理 (WinINET) 或 TUN 网卡 | 1. 浏览器内置“安全 DNS (DoH)”开关未彻底变灰，导致 DNS 解析绕过代理。<br/>2. 本地公网 IPv6 未被代理接管，形成直连旁路。<br/>3. 修改代理后，浏览器后台驻留进程（`msedge.exe` / `chrome.exe`）缓存了旧长连接。 |
+| **网页端 (Web)** | Windows 系统代理 (WinINET) 或 TUN 网卡 | 1. 浏览器 DoH 若未经过代理/TUN，可能绕过预期 DNS 路径。<br/>2. 本地公网 IPv6 未被代理接管，形成直连旁路。<br/>3. 修改代理后，浏览器后台驻留进程（`msedge.exe` / `chrome.exe`）缓存了旧长连接。 |
 | **Claude Code CLI** | 环境变量 (`HTTPS_PROXY` / `HTTP_PROXY`) 或 TUN 网卡 | 1. **默认不读取** Windows 系统代理；只开启系统代理会导致 CLI 直连失败。<br/>2. PowerShell 中使用 `setx` 仅对新开启的窗口生效，当前窗口需 `$env:HTTPS_PROXY="..."`。<br/>3. CLI 运行需完成浏览器 OAuth 授权，网页通不代表 CLI 终端通。 |
 | **桌面客户端 (Desktop)** | 系统代理或 TUN 网卡（基于 Electron） | 1. 单击关闭窗口仅最小化至系统托盘，后台未退出，代理改动不生效。<br/>2. 内置网络设置若曾配置固定端口，在切换代理工具后会失效。 |
 
